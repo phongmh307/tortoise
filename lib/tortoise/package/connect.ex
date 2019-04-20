@@ -14,7 +14,9 @@ defmodule Tortoise.Package.Connect do
             clean_session: boolean(),
             keep_alive: non_neg_integer(),
             client_id: Tortoise.client_id(),
-            will: Package.Publish.t() | nil
+            will: Package.Publish.t() | nil,
+            custom_package: struct() | nil,
+            custom_decode_connack: reference | nil
           }
   @enforce_keys [:client_id]
   defstruct __META__: %Package.Meta{opcode: @opcode},
@@ -25,7 +27,9 @@ defmodule Tortoise.Package.Connect do
             clean_session: true,
             keep_alive: 60,
             client_id: nil,
-            will: nil
+            will: nil,
+            custom_package: nil,
+            custom_decode_connack: nil
 
   @spec decode(binary()) :: t
   def decode(<<@opcode::4, 0::4, variable::binary>>) do

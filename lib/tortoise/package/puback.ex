@@ -14,7 +14,7 @@ defmodule Tortoise.Package.Puback do
             identifier: nil
 
   @spec decode(<<_::32>>) :: t
-  def decode(<<@opcode::4, 0::4, 2, identifier::big-integer-size(16)>>)
+  def decode(<<@opcode::4, _::4, 2, identifier::big-integer-size(16)>>)
       when identifier in 0x0001..0xFFFF do
     %__MODULE__{identifier: identifier}
   end

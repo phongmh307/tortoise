@@ -36,7 +36,8 @@ defmodule Tortoise.Connection do
   def start_link(connection_opts, opts \\ []) do
     client_id = Keyword.fetch!(connection_opts, :client_id)
     server = connection_opts |> Keyword.fetch!(:server) |> Transport.new()
-
+    custom_package = Keyword.get(connection_opts, :connect)
+    custom_decode_connack = Keyword.get(connection_opts, :decode_connack)
     connect = %Package.Connect{
       client_id: client_id,
       user_name: Keyword.get(connection_opts, :user_name),
@@ -44,7 +45,9 @@ defmodule Tortoise.Connection do
       keep_alive: Keyword.get(connection_opts, :keep_alive, 60),
       will: Keyword.get(connection_opts, :will),
       # if we re-spawn from here it means our state is gone
-      clean_session: true
+      clean_session: true,
+      custom_package: custom_package,
+      custom_decode_connack: custom_decode_connack
     }
 
     backoff = Keyword.get(connection_opts, :backoff, [])
@@ -577,14 +580,17 @@ defmodule Tortoise.Connection do
     %State{state | status: status}
   end
 
-  defp do_connect(server, %Connect{} = connect) do
+  defp do_connect(server, connect) do
     %Transport{type: transport, host: host, port: port, opts: opts} = server
-
+    decode_connack = if connect.custom_decode_connack, do: connect.custom_decode_connack, else: &Package.decode/1
+    connect = if connect.custom_package, do: connect.custom_package, else: connect
+    packet = Package.encode(connect)
     with {:ok, socket} <- transport.connect(host, port, opts, 10000),
-         :ok = transport.send(socket, Package.encode(connect)),
-         {:ok, packet} <- transport.recv(socket, 4, 5000) do
+         :ok = transport.send(socket, packet),
+         {:ok, packet} <- transport.recv(socket, 0, 5000)
+    do
       try do
-        case Package.decode(packet) do
+        case decode_connack.(packet) do
           %Connack{status: :accepted} = connack ->
             {connack, socket}
 
