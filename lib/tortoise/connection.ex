@@ -39,7 +39,7 @@ defmodule Tortoise.Connection do
     custom_package = Keyword.get(connection_opts, :connect)
     custom_decode_connack = Keyword.get(connection_opts, :decode_connack)
     protocol_version = Keyword.get(connection_opts, :protocol_version, 0b00000100)
-    protocol = if protocol_version == 0b00000011, do: "MQIsdp", else "MQTT"
+    protocol = if protocol_version == 0b00000011, do: "MQIsdp", else: "MQTT"
     connect = %Package.Connect{
       client_id: client_id,
       user_name: Keyword.get(connection_opts, :user_name),
@@ -626,7 +626,7 @@ defmodule Tortoise.Connection do
       {:error, :timeout} ->
         {:error, :connection_timeout}
 
-      {:error, other} -
+      {:error, other} ->
         {:error, other}
     end
   end
