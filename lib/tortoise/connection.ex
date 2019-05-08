@@ -38,6 +38,8 @@ defmodule Tortoise.Connection do
     server = connection_opts |> Keyword.fetch!(:server) |> Transport.new()
     custom_package = Keyword.get(connection_opts, :connect)
     custom_decode_connack = Keyword.get(connection_opts, :decode_connack)
+    protocol_version = Keyword.get(connection_opts, :protocol_version, 0b00000100)
+    protocol = if protocol_version == 0b00000011, do: "MQIsdp", else "MQTT"
     connect = %Package.Connect{
       client_id: client_id,
       user_name: Keyword.get(connection_opts, :user_name),
@@ -47,7 +49,9 @@ defmodule Tortoise.Connection do
       # if we re-spawn from here it means our state is gone
       clean_session: true,
       custom_package: custom_package,
-      custom_decode_connack: custom_decode_connack
+      custom_decode_connack: custom_decode_connack,
+      protocol_version: protocol_version,
+      protocol: protocol,
     }
 
     backoff = Keyword.get(connection_opts, :backoff, [])
@@ -383,7 +387,6 @@ defmodule Tortoise.Connection do
   def handle_info(:connect, state) do
     # make sure we will not fall for a keep alive timeout while we reconnect
     state = cancel_keep_alive(state)
-
     with {%Connack{status: :accepted} = connack, socket} <-
            do_connect(state.server, state.connect),
          {:ok, state} = init_connection(socket, state) do
@@ -483,6 +486,11 @@ defmodule Tortoise.Connection do
         send(self(), :connect)
         {:noreply, %State{state | status: status}}
     end
+  end
+
+  def handle_info(other, state) do
+    Logger.error(inspect(other), label: "#{__MODULE__}.handle_info")
+    {:noreply, state}
   end
 
   @impl true
@@ -618,7 +626,7 @@ defmodule Tortoise.Connection do
       {:error, :timeout} ->
         {:error, :connection_timeout}
 
-      {:error, other} ->
+      {:error, other} -
         {:error, other}
     end
   end
