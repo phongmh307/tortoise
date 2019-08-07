@@ -42,7 +42,7 @@ defmodule Tortoise.Connection do
       client_id: client_id,
       user_name: Keyword.get(connection_opts, :user_name),
       password: Keyword.get(connection_opts, :password),
-      keep_alive: Keyword.get(connection_opts, :keep_alive, 60),
+      keep_alive: Keyword.get(connection_opts, :keep_alive, 60000),
       will: Keyword.get(connection_opts, :will),
       # if we re-spawn from here it means our state is gone
       clean_session: true,
@@ -550,14 +550,14 @@ defmodule Tortoise.Connection do
   end
 
   defp reset_keep_alive(%State{keep_alive: nil} = state) do
-    ref = Process.send_after(self(), :ping, state.connect.keep_alive * 1000)
+    ref = Process.send_after(self(), :ping, state.connect.keep_alive)
     %State{state | keep_alive: ref}
   end
 
   defp reset_keep_alive(%State{keep_alive: previous_ref} = state) do
     # Cancel the previous timer, just in case one was already set
     _ = Process.cancel_timer(previous_ref)
-    ref = Process.send_after(self(), :ping, state.connect.keep_alive * 1000)
+    ref = Process.send_after(self(), :ping, state.connect.keep_alive)
     %State{state | keep_alive: ref}
   end
 
@@ -622,6 +622,7 @@ defmodule Tortoise.Connection do
         {:error, other}
     end
   end
+  
 
   defp init_connection(socket, %State{opts: opts, server: transport, connect: connect} = state) do
     connection = {transport.type, socket}
