@@ -75,6 +75,49 @@ defmodule Tortoise.Connection do
     GenServer.start_link(__MODULE__, initial, opts)
   end
 
+
+  def start(connection_opts, opts \\ []) do
+    client_id = Keyword.fetch!(connection_opts, :client_id)
+    server = connection_opts |> Keyword.fetch!(:server) |> Transport.new()
+    custom_package = Keyword.get(connection_opts, :connect)
+    custom_decode_connack = Keyword.get(connection_opts, :decode_connack)
+    protocol_version = Keyword.get(connection_opts, :protocol_version, 0b00000100)
+    protocol = if protocol_version == 0b00000011, do: "MQIsdp", else: "MQTT"
+    connect = %Package.Connect{
+      client_id: client_id,
+      user_name: Keyword.get(connection_opts, :user_name),
+      password: Keyword.get(connection_opts, :password),
+      keep_alive: Keyword.get(connection_opts, :keep_alive, 60000),
+      will: Keyword.get(connection_opts, :will),
+      # if we re-spawn from here it means our state is gone
+      clean_session: true,
+      custom_package: custom_package,
+      custom_decode_connack: custom_decode_connack,
+      protocol_version: protocol_version,
+      protocol: protocol,
+    }
+
+    backoff = Keyword.get(connection_opts, :backoff, [])
+
+    # This allow us to either pass in a list of topics, or a
+    # subscription struct. Passing in a subscription struct is helpful
+    # in tests.
+    subscriptions =
+      case Keyword.get(connection_opts, :subscriptions, []) do
+        topics when is_list(topics) ->
+          Enum.into(topics, %Package.Subscribe{})
+
+        %Package.Subscribe{} = subscribe ->
+          subscribe
+      end
+
+    # @todo, validate that the handler is valid
+    connection_opts = Keyword.take(connection_opts, [:client_id, :handler])
+    initial = {server, connect, backoff, subscriptions, connection_opts}
+    opts = Keyword.merge(opts, name: via_name(client_id))
+    GenServer.start(__MODULE__, initial, opts)
+  end
+
   @doc false
   @spec via_name(Tortoise.client_id()) ::
           pid() | {:via, Registry, {Tortoise.Registry, {atom(), Tortoise.client_id()}}}
@@ -591,13 +634,15 @@ defmodule Tortoise.Connection do
   defp do_connect(server, connect) do
     %Transport{type: transport, host: host, port: port, opts: opts} = server
     decode_connack = if connect.custom_decode_connack, do: connect.custom_decode_connack, else: &Package.decode/1
+    length = if connect.custom_decode_connack, do: 0, else: 4
     connect = if connect.custom_package, do: connect.custom_package, else: connect
     packet = Package.encode(connect)
     with {:ok, socket} <- transport.connect(host, port, opts, 10000),
          :ok = transport.send(socket, packet),
-         {:ok, packet} <- transport.recv(socket, 0, 5000)
+         {:ok, packet} <- transport.recv(socket, length, 5000)
     do
       try do
+        IO.inspect(byte_size(packet), label: "connack")
         case decode_connack.(packet) do
           %Connack{status: :accepted} = connack ->
             {connack, socket}
@@ -606,7 +651,8 @@ defmodule Tortoise.Connection do
             connack
         end
       catch
-        :error, {:badmatch, _unexpected} ->
+        :error, {:badmatch, unexpected} ->
+          Logger.error(unexpected)
           violation = %{expected: Connect, got: packet}
           {:error, {:protocol_violation, violation}}
       end

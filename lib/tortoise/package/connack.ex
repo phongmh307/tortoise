@@ -39,6 +39,7 @@ defmodule Tortoise.Package.Connack do
       0x03 -> {:refused, :server_unavailable}
       0x04 -> {:refused, :bad_user_name_or_password}
       0x05 -> {:refused, :not_authorized}
+      16 -> {:refused, :server_unavailable}
     end
   end
 
