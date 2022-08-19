@@ -17,7 +17,7 @@ A minimal connection specification looks like this:
   )
 ```
 
-This will establish a TPC connection to a broker running on
+This will establish a TCP connection to a broker running on
 *localhost* port *1883*. The connection takes a module that implements
 the `Tortoise.Handler` behaviour; In this case the
 `Tortoise.Handler.Logger` callback module, which will print a log
@@ -67,9 +67,11 @@ configuration options. The most important additional options are:
     possible to pass a list of binary (DER encoded) root CA
     certificates using the `cacerts` option instead.
   - `certfile` and `keyfile` are needed if the server authenticates
-    clients using a client certificate. The `cert` and `key` options
-    can be used instead to pass the client certificate and key as
-    DER binaries instead of paths.
+    clients using a client certificate. The `cert` option can be
+    used to pass the client certificate as DER binary, and the
+    `key` option can be used to pass the key using
+    [Erlang's ssl format](http://erlang.org/doc/man/ssl.html#type-key)
+    (e.g. `{:RSAPrivateKey, der_binary_key}`).
   - `verify` defaults to `:verify_peer`, enabling server certificate
     verification. To override, include `verify: :verify_none` in the
     server options. In that case there is no need to define CA
@@ -199,10 +201,11 @@ broker if the client is abruptly disconnected from the broker. This
 message is known as the last will message, and allows for other
 connected clients to act on other clients leaving the broker.
 
-The last will message is specified as part of the connection, and for
+The (default) last will message is specified as part of the connection, and for
 Tortoise it is possible to configure a last will message by passing in
 a `Tortoise.Package.Publish` struct to the *will* connection
-configuration field.
+configuration field. Note that the Tortoise handler can provide a new last will message for 
+each new connection. If the handler chooses not to, the connection's default message will be used.
 
 ``` elixir
 {:ok, pid} =

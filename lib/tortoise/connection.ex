@@ -9,10 +9,21 @@ defmodule Tortoise.Connection do
 
   require Logger
 
-  defstruct [:client_id, :connect, :server, :status, :backoff, :subscriptions, :keep_alive, :opts]
+  defstruct [
+    :client_id,
+    :connect,
+    :server,
+    :status,
+    :backoff,
+    :subscriptions,
+    :keep_alive,
+    :opts,
+    :handler
+  ]
+
   alias __MODULE__, as: State
 
-  alias Tortoise.{Transport, Connection, Package, Events}
+  alias Tortoise.{Transport, Connection, Package, Events, Handler}
   alias Tortoise.Connection.{Inflight, Controller, Receiver, Backoff}
   alias Tortoise.Package.{Connect, Connack}
 
@@ -25,6 +36,7 @@ defmodule Tortoise.Connection do
   @spec start_link(options, GenServer.options()) :: GenServer.on_start()
         when option:
                {:client_id, Tortoise.client_id()}
+               | {:server, {atom(), term()}}
                | {:user_name, String.t()}
                | {:password, String.t()}
                | {:keep_alive, non_neg_integer()}
@@ -401,6 +413,11 @@ defmodule Tortoise.Connection do
   def init(
         {transport, %Connect{client_id: client_id} = connect, backoff_opts, subscriptions, opts}
       ) do
+    Handler.new(Keyword.fetch!(opts, :handler))
+
+    {:ok, %Handler{} = handler} =
+      Handler.new(Keyword.fetch!(opts, :handler)) |> Handler.execute(:init)
+
     state = %State{
       client_id: client_id,
       server: transport,
@@ -408,7 +425,8 @@ defmodule Tortoise.Connection do
       backoff: Backoff.new(backoff_opts),
       subscriptions: subscriptions,
       opts: opts,
-      status: :down
+      status: :down,
+      handler: handler
     }
 
     Tortoise.Registry.put_meta(via_name(client_id), :connecting)
@@ -429,7 +447,8 @@ defmodule Tortoise.Connection do
   @impl true
   def handle_info(:connect, state) do
     # make sure we will not fall for a keep alive timeout while we reconnect
-    state = cancel_keep_alive(state)
+    # check if the will needs to be updated for each connection
+    state = cancel_keep_alive(state) |> maybe_update_last_will()
     with {%Connack{status: :accepted} = connack, socket} <-
            do_connect(state.server, state.connect),
          {:ok, state} = init_connection(socket, state) do
@@ -621,6 +640,21 @@ defmodule Tortoise.Connection do
     %State{state | keep_alive: nil}
   end
 
+  defp maybe_update_last_will(%State{connect: connect, handler: handler} = state) do
+    if function_exported?(handler.module, :last_will, 1) do
+      {{:ok, last_will}, _updated_handler} = Handler.execute(handler, :last_will)
+
+      if last_will == nil do
+        state
+      else
+        updated_connect = %Connect{connect | will: last_will}
+        %State{state | connect: updated_connect}
+      end
+    else
+      state
+    end
+  end
+
   # dispatch connection status if the connection status change
   defp update_connection_status(%State{status: same} = state, same) do
     state
@@ -664,7 +698,7 @@ defmodule Tortoise.Connection do
         {:error, {:nxdomain, host, port}}
 
       {:error, {:options, {:cacertfile, []}}} ->
-        {:error, :no_cacartfile_specified}
+        {:error, :no_cacertfile_specified}
 
       {:error, :closed} ->
         {:error, :server_closed_connection}
@@ -676,7 +710,7 @@ defmodule Tortoise.Connection do
         {:error, other}
     end
   end
-  
+
 
   defp init_connection(socket, %State{opts: opts, server: transport, connect: connect} = state) do
     connection = {transport.type, socket}
@@ -713,6 +747,10 @@ defmodule Tortoise.Connection do
   end
 
   defp categorize_error(:connection_timeout) do
+    :connectivity
+  end
+
+  defp categorize_error(:enetunreach) do
     :connectivity
   end
 

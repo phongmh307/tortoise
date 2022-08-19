@@ -11,9 +11,10 @@ defmodule Tortoise.Transport.SSL do
   def new(opts) do
     {host, opts} = Keyword.pop(opts, :host)
     {port, opts} = Keyword.pop(opts, :port)
+    {list_opts, opts} = Keyword.pop(opts, :opts, [])
     host = coerce_host(host)
     opts = Keyword.merge(@default_opts, opts)
-    opts = [:binary, {:packet, :raw}, {:active, false} | opts]
+    opts = [:binary, {:packet, :raw}, {:active, false} | opts] ++ list_opts
     %Transport{type: __MODULE__, host: host, port: port, opts: opts}
   end
 
@@ -104,8 +105,11 @@ defmodule Tortoise.Transport.SSL do
 
   @impl true
   def accept_ack(client_socket, timeout) do
-    case :ssl.ssl_accept(client_socket, timeout) do
-      :ok ->
+    case :ssl.handshake(client_socket, timeout) do
+      {:ok, _} ->
+        :ok
+
+      {:ok, _, _} ->
         :ok
 
       # abnormal data sent to socket

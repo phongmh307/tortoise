@@ -1,5 +1,37 @@
 # Changelog
 
+## 0.10.0 - 2021-09-08
+
+- Added an optional handler callback to request a last will message from
+  the handler on each connect. If none is provided by the handler, the
+  last will message, if any, set when initializing Connection is used
+  as before.
+
+## 0.9.9 - 2021-06-14
+
+- Switch to using `:ssl.handshake` instead of `:ssl.ssl_accept`
+  for OTP 24 compatibility.
+
+## 0.9.8 - 2021-03-02
+
+- Ease the requirement on the gen_state_machine dependency such
+  that is accept gen_state_machine 3.0.0
+
+## 0.9.6 - 2020-12-01
+
+- Accepted some open PRs that has been waiting for a long while. These
+  include allowing the user to pass in options to connections, and
+  will categorize a connection error as "connectivity", such that
+  tortoise will try to reconnect with back-off.
+
+## 0.9.5 - 2020-10-20
+
+### Fixed
+
+- Allow a timeout on async publish; this will allow the user to
+  override the default timeout set when retrieving the connection;
+  Note that this timeout will not work for the publish itself.
+
 ## 0.9.4 - 2018-11-16
 
 ### Fixed
